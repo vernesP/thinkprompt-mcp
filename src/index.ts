@@ -1447,6 +1447,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: 'delete_quality_snapshot',
+      description: 'Delete a quality snapshot and all its related metrics and issues. Use this to clean up empty or invalid snapshots.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          snapshotId: {
+            type: 'string',
+            description: 'The UUID of the quality snapshot to delete',
+          },
+        },
+        required: ['snapshotId'],
+      },
+    },
+    {
       name: 'get_quality_overview',
       description: 'Get quality analytics overview for a project including scores, trends, and issue breakdown.',
       inputSchema: {
@@ -2633,6 +2647,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   durationMs: result.durationMs,
                   summary: result.summary,
                   message: result.message,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+
+      case 'delete_quality_snapshot': {
+        const { snapshotId } = args as { snapshotId: string };
+        await apiClient.deleteQualitySnapshot(snapshotId);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  success: true,
+                  message: `Quality snapshot ${snapshotId} deleted successfully`,
                 },
                 null,
                 2,

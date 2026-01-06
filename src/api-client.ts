@@ -1694,6 +1694,12 @@ export class ThinkPromptApiClient {
     });
   }
 
+  async deleteQualitySnapshot(snapshotId: string): Promise<void> {
+    await this.request<void>(`/quality-snapshots/${snapshotId}`, {
+      method: 'DELETE',
+    });
+  }
+
   // ============ Quality Issue Methods ============
 
   async createQualityIssue(input: CreateQualityIssueInput): Promise<QualityIssue> {
