@@ -1336,7 +1336,18 @@ export class ThinkPromptApiClient {
       throw new Error(`API request failed: ${response.status} - ${error}`);
     }
 
-    return response.json() as Promise<T>;
+    // Handle empty responses (204 No Content or empty body)
+    const contentLength = response.headers.get('content-length');
+    if (response.status === 204 || contentLength === '0') {
+      return undefined as T;
+    }
+
+    const text = await response.text();
+    if (!text) {
+      return undefined as T;
+    }
+
+    return JSON.parse(text) as T;
   }
 
   async listPrompts(params?: {
