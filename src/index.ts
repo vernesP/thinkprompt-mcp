@@ -1945,6 +1945,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: 'number',
             description: 'Items per page (default: 20, max: 100)',
           },
+          compact: {
+            type: 'boolean',
+            description: 'Return compact response without content/frontmatter (default: true, reduces payload size significantly)',
+          },
         },
       },
     },
@@ -3622,7 +3626,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       // ============ Document Tool Handlers ============
       case 'list_documents': {
-        const params = args as {
+        const { compact = true, ...params } = args as {
           projectId?: string;
           folderId?: string;
           search?: string;
@@ -3630,8 +3634,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           includeArchived?: boolean;
           page?: number;
           limit?: number;
+          compact?: boolean;
         };
         const result = await apiClient.listDocuments(params);
+
+        // In compact mode, strip content and frontmatter to reduce payload size
+        if (compact && result.data) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const compactData = result.data.map((doc: any) => {
+            const { content, frontmatter, ...rest } = doc;
+            return rest;
+          });
+          result.data = compactData;
+        }
+
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
         };
