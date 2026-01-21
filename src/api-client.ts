@@ -1464,7 +1464,26 @@ export class ThinkPromptApiClient {
    * List all workspaces the user belongs to
    */
   async listWorkspaces(): Promise<Workspace[]> {
-    const workspaces = await this.request<Workspace[]>('/workspaces/list');
+    const response = await this.request<{ success: boolean; data: Workspace[] }>(
+      '/workspaces/list',
+    );
+    // API returns { success, data } wrapper - handle various response formats
+    let workspaces: Workspace[];
+    if (Array.isArray(response)) {
+      workspaces = response;
+    } else if (response && typeof response === 'object') {
+      const data = (response as { data?: unknown }).data;
+      if (Array.isArray(data)) {
+        workspaces = data;
+      } else if (data && typeof data === 'object' && Array.isArray((data as { data?: unknown }).data)) {
+        // Handle double-nested case: { success, data: { success, data: [...] } }
+        workspaces = (data as { data: Workspace[] }).data;
+      } else {
+        workspaces = [];
+      }
+    } else {
+      workspaces = [];
+    }
     this.workspaces = workspaces;
     return workspaces;
   }
@@ -1478,7 +1497,10 @@ export class ThinkPromptApiClient {
       { method: 'POST' },
     );
     this.currentWorkspaceId = workspaceId;
-    // Update cache
+    // Update cache - ensure workspaces are loaded first
+    if (!Array.isArray(this.workspaces) || !this.workspaces.length) {
+      await this.listWorkspaces();
+    }
     const workspace = this.workspaces.find((w) => w.id === workspaceId);
     if (workspace) {
       this.workspaces = this.workspaces.map((w) => ({

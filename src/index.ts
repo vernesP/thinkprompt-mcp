@@ -3638,18 +3638,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
         const result = await apiClient.listDocuments(params);
 
+        // Handle nested response: { data: [...], meta: {...} } or { success, data: { data: [...], meta: {...} } }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const responseData = (result as any)?.data;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const documents = Array.isArray(responseData) ? responseData : (responseData as any)?.data ?? [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const meta = Array.isArray(responseData) ? (result as any)?.meta : (responseData as any)?.meta;
+
         // In compact mode, strip content and frontmatter to reduce payload size
-        if (compact && result.data) {
+        if (compact && documents.length > 0) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const compactData = result.data.map((doc: any) => {
+          const compactData = documents.map((doc: any) => {
             const { content, frontmatter, ...rest } = doc;
             return rest;
           });
-          result.data = compactData;
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ data: compactData, meta }, null, 2) }],
+          };
         }
 
         return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+          content: [{ type: 'text', text: JSON.stringify({ data: documents, meta }, null, 2) }],
         };
       }
 
