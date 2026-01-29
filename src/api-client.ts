@@ -1515,7 +1515,7 @@ export class ThinkPromptApiClient {
    * Get the current active workspace
    */
   async getCurrentWorkspace(): Promise<Workspace | null> {
-    if (!this.workspaces.length) {
+    if (!Array.isArray(this.workspaces) || !this.workspaces.length) {
       await this.listWorkspaces();
     }
 
