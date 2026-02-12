@@ -1276,6 +1276,257 @@ export interface ReorderDocumentFoldersInput {
   items: Array<{ id: string; sortOrder: number }>;
 }
 
+// ============ Requirement Types ============
+
+export type RequirementStatus = 'draft' | 'in_discovery' | 'structured' | 'quality_check' | 'in_review' | 'approved' | 'exported';
+export type AcceptanceCriteriaType = 'positive' | 'negative' | 'edge_case';
+export type PreconditionCategory = 'technical_deps' | 'data_requirements' | 'env_config' | 'architecture';
+export type VerificationTestType = 'unit' | 'integration' | 'e2e' | 'manual' | 'performance';
+export type RequirementLinkType = 'depends_on' | 'blocks' | 'related' | 'parent' | 'child';
+export type CommentLevel = 'requirement' | 'section' | 'element' | 'inline';
+export type CommentStatus = 'open' | 'resolved' | 'wont_fix';
+
+export interface RequirementDescription {
+  overview: string;
+  background: string;
+  userStory: string;
+  businessValue: string;
+  affectedRoles: string[];
+  successCriteria: string[];
+}
+
+export interface RequirementScope {
+  inScope: string[];
+  outOfScope: string[];
+  assumptions: string[];
+  constraints: string[];
+}
+
+export interface RequirementQualityScore {
+  completeness: number | null;
+  clarity: number | null;
+  testability: number | null;
+  atomicity: number | null;
+  traceability: number | null;
+  collaboration: number | null;
+  overall: number | null;
+  issues: Array<{ rule: string; severity: string; message: string; suggestion: string }>;
+  lastCalculatedAt: string | null;
+}
+
+export interface Requirement {
+  id: string;
+  projectId: string | null;
+  featureId: string | null;
+  displayId: string;
+  title: string;
+  description: RequirementDescription;
+  scope: RequirementScope;
+  qualityScore: RequirementQualityScore;
+  status: RequirementStatus;
+  isArchived: boolean;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  tags: Array<{ id: string; name: string; color: string }>;
+  creator: { userId: string; email: string; fullName: string | null } | null;
+  assignees: Array<{ userId: string; email: string; fullName: string | null }>;
+  acceptanceCriteriaCount: number;
+  preconditionsCount: number;
+  verificationTestsCount: number;
+  linksCount: number;
+  commentsCount: number;
+  unresolvedCommentsCount: number;
+}
+
+export interface AcceptanceCriterion {
+  id: string;
+  requirementId: string;
+  scenarioName: string;
+  givenContext: string;
+  whenAction: string;
+  thenOutcome: string;
+  type: AcceptanceCriteriaType;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Precondition {
+  id: string;
+  requirementId: string;
+  category: PreconditionCategory;
+  title: string;
+  description: string;
+  isMet: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TestStep {
+  step: number;
+  action: string;
+  expected: string;
+}
+
+export interface VerificationTest {
+  id: string;
+  requirementId: string;
+  testName: string;
+  testType: VerificationTestType;
+  description: string;
+  steps: TestStep[];
+  expectedResult: string;
+  automationHint: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RequirementLink {
+  id: string;
+  sourceRequirementId: string;
+  targetRequirementId: string;
+  linkType: RequirementLinkType;
+  description: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  linkedRequirement: {
+    id: string;
+    displayId: string;
+    title: string;
+    status: RequirementStatus;
+    qualityScore: { overall: number | null };
+  };
+}
+
+export interface RequirementComment {
+  id: string;
+  requirementId: string;
+  parentCommentId: string | null;
+  commentLevel: CommentLevel;
+  sectionKey: string | null;
+  elementId: string | null;
+  inlinePosition: { startOffset: number; endOffset: number } | null;
+  content: string;
+  mentionedUsers: string[];
+  status: CommentStatus;
+  createdBy: string;
+  createdBySource: 'user' | 'ai' | 'system';
+  isEdited: boolean;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  author: { userId: string; email: string; fullName: string | null };
+  replies: RequirementComment[];
+}
+
+export interface CreateRequirementInput {
+  title: string;
+  description?: Partial<RequirementDescription>;
+  scope?: Partial<RequirementScope>;
+  featureId?: string;
+  status?: RequirementStatus;
+  tagIds?: string[];
+  assigneeIds?: string[];
+}
+
+export interface UpdateRequirementInput {
+  title?: string;
+  description?: Partial<RequirementDescription>;
+  scope?: Partial<RequirementScope>;
+  featureId?: string | null;
+  tagIds?: string[];
+  assigneeIds?: string[];
+}
+
+export interface CreateAcceptanceCriterionInput {
+  scenarioName: string;
+  givenContext: string;
+  whenAction: string;
+  thenOutcome: string;
+  type?: AcceptanceCriteriaType;
+  sortOrder?: number;
+}
+
+export interface UpdateAcceptanceCriterionInput {
+  scenarioName?: string;
+  givenContext?: string;
+  whenAction?: string;
+  thenOutcome?: string;
+  type?: AcceptanceCriteriaType;
+  sortOrder?: number;
+}
+
+export interface CreatePreconditionInput {
+  category: PreconditionCategory;
+  title: string;
+  description?: string;
+  sortOrder?: number;
+}
+
+export interface UpdatePreconditionInput {
+  category?: PreconditionCategory;
+  title?: string;
+  description?: string;
+  isMet?: boolean;
+  sortOrder?: number;
+}
+
+export interface CreateVerificationTestInput {
+  testName: string;
+  testType: VerificationTestType;
+  description?: string;
+  steps?: TestStep[];
+  expectedResult?: string;
+  automationHint?: string;
+  sortOrder?: number;
+}
+
+export interface UpdateVerificationTestInput {
+  testName?: string;
+  testType?: VerificationTestType;
+  description?: string;
+  steps?: TestStep[];
+  expectedResult?: string;
+  automationHint?: string;
+  sortOrder?: number;
+}
+
+export interface CreateRequirementLinkInput {
+  targetRequirementId: string;
+  linkType: RequirementLinkType;
+  description?: string;
+}
+
+export interface CreateRequirementCommentInput {
+  content: string;
+  parentCommentId?: string;
+  commentLevel: CommentLevel;
+  sectionKey?: string;
+  elementId?: string;
+  inlinePosition?: { startOffset: number; endOffset: number };
+  mentionedUsers?: string[];
+}
+
+export interface UpdateRequirementCommentInput {
+  content?: string;
+  status?: CommentStatus;
+}
+
+export interface ListRequirementsQuery {
+  status?: RequirementStatus;
+  includeArchived?: boolean;
+  featureId?: string;
+  tagId?: string;
+  assigneeId?: string;
+  search?: string;
+  sortBy?: 'created_at' | 'updated_at' | 'display_id' | 'quality_score';
+  sortOrder?: 'asc' | 'desc';
+}
+
 export class ThinkPromptApiClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
@@ -2297,5 +2548,220 @@ export class ThinkPromptApiClient {
       method: 'POST',
       body: JSON.stringify(input),
     });
+  }
+
+  // ============ Requirement Methods ============
+
+  async listRequirements(params?: ListRequirementsQuery): Promise<Requirement[]> {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.featureId) searchParams.set('featureId', params.featureId);
+    if (params?.tagId) searchParams.set('tagId', params.tagId);
+    if (params?.assigneeId) searchParams.set('assigneeId', params.assigneeId);
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.includeArchived) searchParams.set('includeArchived', 'true');
+    if (params?.sortBy) searchParams.set('sortBy', params.sortBy);
+    if (params?.sortOrder) searchParams.set('sortOrder', params.sortOrder);
+    const query = searchParams.toString();
+    return this.request<Requirement[]>(`/requirements${query ? `?${query}` : ''}`);
+  }
+
+  async getRequirement(id: string): Promise<Requirement> {
+    return this.request<Requirement>(`/requirements/${id}`);
+  }
+
+  async createRequirement(input: CreateRequirementInput): Promise<Requirement> {
+    return this.request<Requirement>('/requirements', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
+
+  async updateRequirement(id: string, input: UpdateRequirementInput): Promise<Requirement> {
+    return this.request<Requirement>(`/requirements/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    });
+  }
+
+  async updateRequirementStatus(id: string, status: RequirementStatus): Promise<Requirement> {
+    return this.request<Requirement>(`/requirements/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  async deleteRequirement(id: string): Promise<void> {
+    await this.request<void>(`/requirements/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async searchRequirements(params: { q: string; includeArchived?: boolean }): Promise<Requirement[]> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('q', params.q);
+    if (params.includeArchived) searchParams.set('includeArchived', 'true');
+    const query = searchParams.toString();
+    return this.request<Requirement[]>(`/requirements/search?${query}`);
+  }
+
+  // ============ Acceptance Criteria Methods ============
+
+  async listAcceptanceCriteria(requirementId: string): Promise<AcceptanceCriterion[]> {
+    return this.request<AcceptanceCriterion[]>(`/requirements/${requirementId}/acceptance-criteria`);
+  }
+
+  async createAcceptanceCriterion(requirementId: string, input: CreateAcceptanceCriterionInput): Promise<AcceptanceCriterion> {
+    return this.request<AcceptanceCriterion>(`/requirements/${requirementId}/acceptance-criteria`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
+
+  async updateAcceptanceCriterion(id: string, input: UpdateAcceptanceCriterionInput): Promise<AcceptanceCriterion> {
+    return this.request<AcceptanceCriterion>(`/acceptance-criteria/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    });
+  }
+
+  async deleteAcceptanceCriterion(id: string): Promise<void> {
+    await this.request<void>(`/acceptance-criteria/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // ============ Precondition Methods ============
+
+  async listPreconditions(requirementId: string): Promise<Precondition[]> {
+    return this.request<Precondition[]>(`/requirements/${requirementId}/preconditions`);
+  }
+
+  async createPrecondition(requirementId: string, input: CreatePreconditionInput): Promise<Precondition> {
+    return this.request<Precondition>(`/requirements/${requirementId}/preconditions`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
+
+  async updatePrecondition(id: string, input: UpdatePreconditionInput): Promise<Precondition> {
+    return this.request<Precondition>(`/preconditions/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    });
+  }
+
+  async deletePrecondition(id: string): Promise<void> {
+    await this.request<void>(`/preconditions/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // ============ Verification Test Methods ============
+
+  async listVerificationTests(requirementId: string): Promise<VerificationTest[]> {
+    return this.request<VerificationTest[]>(`/requirements/${requirementId}/verification-tests`);
+  }
+
+  async createVerificationTest(requirementId: string, input: CreateVerificationTestInput): Promise<VerificationTest> {
+    return this.request<VerificationTest>(`/requirements/${requirementId}/verification-tests`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
+
+  async updateVerificationTest(id: string, input: UpdateVerificationTestInput): Promise<VerificationTest> {
+    return this.request<VerificationTest>(`/verification-tests/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    });
+  }
+
+  async deleteVerificationTest(id: string): Promise<void> {
+    await this.request<void>(`/verification-tests/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // ============ Requirement Link Methods ============
+
+  async listRequirementLinks(requirementId: string): Promise<RequirementLink[]> {
+    return this.request<RequirementLink[]>(`/requirements/${requirementId}/links`);
+  }
+
+  async createRequirementLink(requirementId: string, input: CreateRequirementLinkInput): Promise<RequirementLink> {
+    return this.request<RequirementLink>(`/requirements/${requirementId}/links`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
+
+  async deleteRequirementLink(linkId: string): Promise<void> {
+    await this.request<void>(`/requirement-links/${linkId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // ============ Requirement Comment Methods ============
+
+  async listRequirementComments(requirementId: string): Promise<RequirementComment[]> {
+    return this.request<RequirementComment[]>(`/requirements/${requirementId}/comments`);
+  }
+
+  async createRequirementComment(requirementId: string, input: CreateRequirementCommentInput): Promise<RequirementComment> {
+    return this.request<RequirementComment>(`/requirements/${requirementId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
+
+  async updateRequirementComment(id: string, input: UpdateRequirementCommentInput): Promise<RequirementComment> {
+    return this.request<RequirementComment>(`/requirement-comments/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    });
+  }
+
+  async deleteRequirementComment(id: string): Promise<void> {
+    await this.request<void>(`/requirement-comments/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // ============ Requirement Tag Methods ============
+
+  async addRequirementTags(requirementId: string, tagIds: string[]): Promise<void> {
+    await this.request<void>(`/requirements/${requirementId}/tags`, {
+      method: 'POST',
+      body: JSON.stringify({ tagIds }),
+    });
+  }
+
+  async removeRequirementTag(requirementId: string, tagId: string): Promise<void> {
+    await this.request<void>(`/requirements/${requirementId}/tags/${tagId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getRequirementTags(requirementId: string): Promise<Tag[]> {
+    return this.request<Tag[]>(`/requirements/${requirementId}/tags`);
+  }
+
+  // ============ Requirement Quality Methods ============
+
+  async calculateRequirementQuality(requirementId: string): Promise<RequirementQualityScore> {
+    return this.request<RequirementQualityScore>(`/requirements/${requirementId}/quality/calculate`, {
+      method: 'POST',
+    });
+  }
+
+  async getRequirementQuality(requirementId: string): Promise<RequirementQualityScore> {
+    return this.request<RequirementQualityScore>(`/requirements/${requirementId}/quality`);
+  }
+
+  // ============ Requirement Activity Methods ============
+
+  async getRequirementActivity(requirementId: string): Promise<unknown[]> {
+    return this.request<unknown[]>(`/requirements/${requirementId}/activity`);
   }
 }

@@ -2294,6 +2294,744 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['items'],
       },
     },
+
+    // ============ Requirement Tools ============
+    {
+      name: 'list_requirements',
+      description: 'List requirements with optional filters. Returns requirements with their status, quality scores, and counts of sub-entities.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          status: {
+            type: 'string',
+            enum: ['draft', 'in_discovery', 'structured', 'quality_check', 'in_review', 'approved', 'exported'],
+            description: 'Filter by requirement status',
+          },
+          featureId: {
+            type: 'string',
+            description: 'Filter by feature UUID',
+          },
+          tagId: {
+            type: 'string',
+            description: 'Filter by tag UUID',
+          },
+          assigneeId: {
+            type: 'string',
+            description: 'Filter by assignee user UUID',
+          },
+          search: {
+            type: 'string',
+            description: 'Search by title or displayId',
+          },
+          includeArchived: {
+            type: 'boolean',
+            description: 'Include archived requirements (default: false)',
+          },
+          sortBy: {
+            type: 'string',
+            enum: ['created_at', 'updated_at', 'display_id', 'quality_score'],
+            description: 'Sort field',
+          },
+          sortOrder: {
+            type: 'string',
+            enum: ['asc', 'desc'],
+            description: 'Sort direction',
+          },
+        },
+      },
+    },
+    {
+      name: 'get_requirement',
+      description: 'Get a single requirement by ID with full details including description, scope, quality score, tags, and assignees.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'The UUID of the requirement',
+          },
+        },
+        required: ['id'],
+      },
+    },
+    {
+      name: 'create_requirement',
+      description: 'Create a new requirement. Only title is required; description, scope, featureId, status, tags, and assignees are optional.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          title: {
+            type: 'string',
+            description: 'Requirement title',
+          },
+          description: {
+            type: 'object',
+            description: 'Structured description with overview, background, userStory, businessValue, affectedRoles, successCriteria',
+            properties: {
+              overview: { type: 'string' },
+              background: { type: 'string' },
+              userStory: { type: 'string' },
+              businessValue: { type: 'string' },
+              affectedRoles: { type: 'array', items: { type: 'string' } },
+              successCriteria: { type: 'array', items: { type: 'string' } },
+            },
+          },
+          scope: {
+            type: 'object',
+            description: 'Scope definition with inScope, outOfScope, assumptions, constraints',
+            properties: {
+              inScope: { type: 'array', items: { type: 'string' } },
+              outOfScope: { type: 'array', items: { type: 'string' } },
+              assumptions: { type: 'array', items: { type: 'string' } },
+              constraints: { type: 'array', items: { type: 'string' } },
+            },
+          },
+          featureId: {
+            type: 'string',
+            description: 'Link to a feature UUID',
+          },
+          status: {
+            type: 'string',
+            enum: ['draft', 'in_discovery', 'structured', 'quality_check', 'in_review', 'approved', 'exported'],
+            description: 'Initial status (default: draft)',
+          },
+          tagIds: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Tag UUIDs to attach (max 10)',
+          },
+          assigneeIds: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'User UUIDs to assign',
+          },
+        },
+        required: ['title'],
+      },
+    },
+    {
+      name: 'update_requirement',
+      description: 'Update an existing requirement. All fields are optional.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'The UUID of the requirement to update',
+          },
+          title: { type: 'string', description: 'New title' },
+          description: {
+            type: 'object',
+            description: 'Partial description update',
+            properties: {
+              overview: { type: 'string' },
+              background: { type: 'string' },
+              userStory: { type: 'string' },
+              businessValue: { type: 'string' },
+              affectedRoles: { type: 'array', items: { type: 'string' } },
+              successCriteria: { type: 'array', items: { type: 'string' } },
+            },
+          },
+          scope: {
+            type: 'object',
+            description: 'Partial scope update',
+            properties: {
+              inScope: { type: 'array', items: { type: 'string' } },
+              outOfScope: { type: 'array', items: { type: 'string' } },
+              assumptions: { type: 'array', items: { type: 'string' } },
+              constraints: { type: 'array', items: { type: 'string' } },
+            },
+          },
+          featureId: { type: 'string', description: 'Feature UUID (null to unlink)' },
+          tagIds: { type: 'array', items: { type: 'string' }, description: 'Replace all tags' },
+          assigneeIds: { type: 'array', items: { type: 'string' }, description: 'Replace all assignees' },
+        },
+        required: ['id'],
+      },
+    },
+    {
+      name: 'update_requirement_status',
+      description: 'Update only the status of a requirement. Follows the workflow: draft → in_discovery → structured → quality_check → in_review → approved → exported.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'The UUID of the requirement',
+          },
+          status: {
+            type: 'string',
+            enum: ['draft', 'in_discovery', 'structured', 'quality_check', 'in_review', 'approved', 'exported'],
+            description: 'New status',
+          },
+        },
+        required: ['id', 'status'],
+      },
+    },
+    {
+      name: 'delete_requirement',
+      description: 'Archive (soft-delete) a requirement.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'The UUID of the requirement to archive',
+          },
+        },
+        required: ['id'],
+      },
+    },
+    {
+      name: 'search_requirements',
+      description: 'Full-text search requirements by title or displayId.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          q: {
+            type: 'string',
+            description: 'Search query string',
+          },
+          includeArchived: {
+            type: 'boolean',
+            description: 'Include archived requirements',
+          },
+        },
+        required: ['q'],
+      },
+    },
+
+    // ============ Acceptance Criteria Tools ============
+    {
+      name: 'list_acceptance_criteria',
+      description: 'List all acceptance criteria for a requirement. Returns BDD-style given/when/then scenarios.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          requirementId: {
+            type: 'string',
+            description: 'The UUID of the requirement',
+          },
+        },
+        required: ['requirementId'],
+      },
+    },
+    {
+      name: 'create_acceptance_criterion',
+      description: 'Create a BDD-style acceptance criterion (given/when/then) for a requirement.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          requirementId: {
+            type: 'string',
+            description: 'The UUID of the requirement',
+          },
+          scenarioName: {
+            type: 'string',
+            description: 'Name of the scenario',
+          },
+          givenContext: {
+            type: 'string',
+            description: 'Given: the precondition or context',
+          },
+          whenAction: {
+            type: 'string',
+            description: 'When: the action or event',
+          },
+          thenOutcome: {
+            type: 'string',
+            description: 'Then: the expected outcome',
+          },
+          type: {
+            type: 'string',
+            enum: ['positive', 'negative', 'edge_case'],
+            description: 'Type of test case (default: positive)',
+          },
+          sortOrder: {
+            type: 'number',
+            description: 'Sort order for display',
+          },
+        },
+        required: ['requirementId', 'scenarioName', 'givenContext', 'whenAction', 'thenOutcome'],
+      },
+    },
+    {
+      name: 'update_acceptance_criterion',
+      description: 'Update an existing acceptance criterion.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'The UUID of the acceptance criterion',
+          },
+          scenarioName: { type: 'string' },
+          givenContext: { type: 'string' },
+          whenAction: { type: 'string' },
+          thenOutcome: { type: 'string' },
+          type: { type: 'string', enum: ['positive', 'negative', 'edge_case'] },
+          sortOrder: { type: 'number' },
+        },
+        required: ['id'],
+      },
+    },
+    {
+      name: 'delete_acceptance_criterion',
+      description: 'Delete an acceptance criterion.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'The UUID of the acceptance criterion to delete',
+          },
+        },
+        required: ['id'],
+      },
+    },
+
+    // ============ Precondition Tools ============
+    {
+      name: 'list_preconditions',
+      description: 'List all preconditions for a requirement.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          requirementId: {
+            type: 'string',
+            description: 'The UUID of the requirement',
+          },
+        },
+        required: ['requirementId'],
+      },
+    },
+    {
+      name: 'create_precondition',
+      description: 'Create a precondition for a requirement.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          requirementId: {
+            type: 'string',
+            description: 'The UUID of the requirement',
+          },
+          category: {
+            type: 'string',
+            enum: ['technical_deps', 'data_requirements', 'env_config', 'architecture'],
+            description: 'Precondition category',
+          },
+          title: {
+            type: 'string',
+            description: 'Precondition title',
+          },
+          description: {
+            type: 'string',
+            description: 'Detailed description',
+          },
+          sortOrder: {
+            type: 'number',
+            description: 'Sort order for display',
+          },
+        },
+        required: ['requirementId', 'category', 'title'],
+      },
+    },
+    {
+      name: 'update_precondition',
+      description: 'Update an existing precondition.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'The UUID of the precondition',
+          },
+          category: { type: 'string', enum: ['technical_deps', 'data_requirements', 'env_config', 'architecture'] },
+          title: { type: 'string' },
+          description: { type: 'string' },
+          isMet: { type: 'boolean', description: 'Whether the precondition is met' },
+          sortOrder: { type: 'number' },
+        },
+        required: ['id'],
+      },
+    },
+    {
+      name: 'delete_precondition',
+      description: 'Delete a precondition.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'The UUID of the precondition to delete',
+          },
+        },
+        required: ['id'],
+      },
+    },
+
+    // ============ Verification Test Tools ============
+    {
+      name: 'list_verification_tests',
+      description: 'List all verification tests for a requirement.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          requirementId: {
+            type: 'string',
+            description: 'The UUID of the requirement',
+          },
+        },
+        required: ['requirementId'],
+      },
+    },
+    {
+      name: 'create_verification_test',
+      description: 'Create a verification test for a requirement with test steps and expected results.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          requirementId: {
+            type: 'string',
+            description: 'The UUID of the requirement',
+          },
+          testName: {
+            type: 'string',
+            description: 'Name of the test',
+          },
+          testType: {
+            type: 'string',
+            enum: ['unit', 'integration', 'e2e', 'manual', 'performance'],
+            description: 'Type of verification test',
+          },
+          description: {
+            type: 'string',
+            description: 'Test description',
+          },
+          steps: {
+            type: 'array',
+            description: 'Test steps',
+            items: {
+              type: 'object',
+              properties: {
+                step: { type: 'number', description: 'Step number' },
+                action: { type: 'string', description: 'Action to perform' },
+                expected: { type: 'string', description: 'Expected result for this step' },
+              },
+              required: ['step', 'action', 'expected'],
+            },
+          },
+          expectedResult: {
+            type: 'string',
+            description: 'Overall expected result',
+          },
+          automationHint: {
+            type: 'string',
+            description: 'Hint for test automation (e.g., Cypress selector, API endpoint)',
+          },
+          sortOrder: {
+            type: 'number',
+            description: 'Sort order for display',
+          },
+        },
+        required: ['requirementId', 'testName', 'testType'],
+      },
+    },
+    {
+      name: 'update_verification_test',
+      description: 'Update an existing verification test.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'The UUID of the verification test',
+          },
+          testName: { type: 'string' },
+          testType: { type: 'string', enum: ['unit', 'integration', 'e2e', 'manual', 'performance'] },
+          description: { type: 'string' },
+          steps: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                step: { type: 'number' },
+                action: { type: 'string' },
+                expected: { type: 'string' },
+              },
+              required: ['step', 'action', 'expected'],
+            },
+          },
+          expectedResult: { type: 'string' },
+          automationHint: { type: 'string' },
+          sortOrder: { type: 'number' },
+        },
+        required: ['id'],
+      },
+    },
+    {
+      name: 'delete_verification_test',
+      description: 'Delete a verification test.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'The UUID of the verification test to delete',
+          },
+        },
+        required: ['id'],
+      },
+    },
+
+    // ============ Requirement Link Tools ============
+    {
+      name: 'list_requirement_links',
+      description: 'List all links (dependencies, relations) for a requirement.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          requirementId: {
+            type: 'string',
+            description: 'The UUID of the requirement',
+          },
+        },
+        required: ['requirementId'],
+      },
+    },
+    {
+      name: 'create_requirement_link',
+      description: 'Create a dependency or relation link between two requirements.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          requirementId: {
+            type: 'string',
+            description: 'The source requirement UUID',
+          },
+          targetRequirementId: {
+            type: 'string',
+            description: 'The target requirement UUID',
+          },
+          linkType: {
+            type: 'string',
+            enum: ['depends_on', 'blocks', 'related', 'parent', 'child'],
+            description: 'Type of link',
+          },
+          description: {
+            type: 'string',
+            description: 'Optional description of the relationship',
+          },
+        },
+        required: ['requirementId', 'targetRequirementId', 'linkType'],
+      },
+    },
+    {
+      name: 'delete_requirement_link',
+      description: 'Delete a requirement link.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          linkId: {
+            type: 'string',
+            description: 'The UUID of the link to delete',
+          },
+        },
+        required: ['linkId'],
+      },
+    },
+
+    // ============ Requirement Comment Tools ============
+    {
+      name: 'list_requirement_comments',
+      description: 'List all threaded comments on a requirement.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          requirementId: {
+            type: 'string',
+            description: 'The UUID of the requirement',
+          },
+        },
+        required: ['requirementId'],
+      },
+    },
+    {
+      name: 'create_requirement_comment',
+      description: 'Add a comment to a requirement. Supports threading via parentCommentId and targeting specific sections/elements.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          requirementId: {
+            type: 'string',
+            description: 'The UUID of the requirement',
+          },
+          content: {
+            type: 'string',
+            description: 'Comment content (markdown supported)',
+          },
+          parentCommentId: {
+            type: 'string',
+            description: 'Parent comment UUID for threaded replies',
+          },
+          commentLevel: {
+            type: 'string',
+            enum: ['requirement', 'section', 'element', 'inline'],
+            description: 'Level of the comment (default: requirement)',
+          },
+          sectionKey: {
+            type: 'string',
+            description: 'Section key for section-level comments',
+          },
+          elementId: {
+            type: 'string',
+            description: 'Element UUID for element-level comments',
+          },
+          mentionedUsers: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'User UUIDs to mention',
+          },
+        },
+        required: ['requirementId', 'content', 'commentLevel'],
+      },
+    },
+    {
+      name: 'update_requirement_comment',
+      description: 'Update a requirement comment (content or status).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'The UUID of the comment',
+          },
+          content: {
+            type: 'string',
+            description: 'New comment content',
+          },
+          status: {
+            type: 'string',
+            enum: ['open', 'resolved', 'wont_fix'],
+            description: 'New comment status',
+          },
+        },
+        required: ['id'],
+      },
+    },
+    {
+      name: 'delete_requirement_comment',
+      description: 'Delete a requirement comment.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'The UUID of the comment to delete',
+          },
+        },
+        required: ['id'],
+      },
+    },
+
+    // ============ Requirement Tag Tools ============
+    {
+      name: 'add_requirement_tags',
+      description: 'Add tags to a requirement (max 10 total).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          requirementId: {
+            type: 'string',
+            description: 'The UUID of the requirement',
+          },
+          tagIds: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Tag UUIDs to add',
+          },
+        },
+        required: ['requirementId', 'tagIds'],
+      },
+    },
+    {
+      name: 'remove_requirement_tag',
+      description: 'Remove a tag from a requirement.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          requirementId: {
+            type: 'string',
+            description: 'The UUID of the requirement',
+          },
+          tagId: {
+            type: 'string',
+            description: 'The UUID of the tag to remove',
+          },
+        },
+        required: ['requirementId', 'tagId'],
+      },
+    },
+    {
+      name: 'get_requirement_tags',
+      description: 'Get all tags for a requirement.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          requirementId: {
+            type: 'string',
+            description: 'The UUID of the requirement',
+          },
+        },
+        required: ['requirementId'],
+      },
+    },
+
+    // ============ Requirement Quality Tools ============
+    {
+      name: 'calculate_requirement_quality',
+      description: 'Calculate the quality score for a requirement. Evaluates completeness, clarity, testability, atomicity, traceability, and collaboration.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          requirementId: {
+            type: 'string',
+            description: 'The UUID of the requirement',
+          },
+        },
+        required: ['requirementId'],
+      },
+    },
+    {
+      name: 'get_requirement_quality',
+      description: 'Get the cached quality score for a requirement without recalculating.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          requirementId: {
+            type: 'string',
+            description: 'The UUID of the requirement',
+          },
+        },
+        required: ['requirementId'],
+      },
+    },
+
+    // ============ Requirement Activity Tools ============
+    {
+      name: 'get_requirement_activity',
+      description: 'Get the activity log (history) for a requirement.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          requirementId: {
+            type: 'string',
+            description: 'The UUID of the requirement',
+          },
+        },
+        required: ['requirementId'],
+      },
+    },
   ],
 }));
 
@@ -3846,6 +4584,403 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         await apiClient.reorderDocumentFolders({ items });
         return {
           content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Folders reordered successfully' }, null, 2) }],
+        };
+      }
+
+      // ============ Requirement Tool Handlers ============
+
+      case 'list_requirements': {
+        const params = args as {
+          status?: string;
+          featureId?: string;
+          tagId?: string;
+          assigneeId?: string;
+          search?: string;
+          includeArchived?: boolean;
+          sortBy?: 'created_at' | 'updated_at' | 'display_id' | 'quality_score';
+          sortOrder?: 'asc' | 'desc';
+        };
+        const result = await apiClient.listRequirements(params as import('./api-client.js').ListRequirementsQuery);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'get_requirement': {
+        const { id } = args as { id: string };
+        const result = await apiClient.getRequirement(id);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'create_requirement': {
+        const input = args as {
+          title: string;
+          description?: Record<string, unknown>;
+          scope?: Record<string, unknown>;
+          featureId?: string;
+          status?: string;
+          tagIds?: string[];
+          assigneeIds?: string[];
+        };
+        const result = await apiClient.createRequirement(input as import('./api-client.js').CreateRequirementInput);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'update_requirement': {
+        const { id, ...updateData } = args as {
+          id: string;
+          title?: string;
+          description?: Record<string, unknown>;
+          scope?: Record<string, unknown>;
+          featureId?: string;
+          tagIds?: string[];
+          assigneeIds?: string[];
+        };
+        const result = await apiClient.updateRequirement(id, updateData as import('./api-client.js').UpdateRequirementInput);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'update_requirement_status': {
+        const { id, status } = args as {
+          id: string;
+          status: 'draft' | 'in_discovery' | 'structured' | 'quality_check' | 'in_review' | 'approved' | 'exported';
+        };
+        const result = await apiClient.updateRequirementStatus(id, status);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'delete_requirement': {
+        const { id } = args as { id: string };
+        await apiClient.deleteRequirement(id);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Requirement archived successfully' }, null, 2) }],
+        };
+      }
+
+      case 'search_requirements': {
+        const { q, includeArchived } = args as { q: string; includeArchived?: boolean };
+        const result = await apiClient.searchRequirements({ q, includeArchived });
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      // ============ Acceptance Criteria Handlers ============
+
+      case 'list_acceptance_criteria': {
+        const { requirementId } = args as { requirementId: string };
+        const result = await apiClient.listAcceptanceCriteria(requirementId);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'create_acceptance_criterion': {
+        const { requirementId, scenarioName, givenContext, whenAction, thenOutcome, type, sortOrder } = args as {
+          requirementId: string;
+          scenarioName: string;
+          givenContext: string;
+          whenAction: string;
+          thenOutcome: string;
+          type?: 'positive' | 'negative' | 'edge_case';
+          sortOrder?: number;
+        };
+        const result = await apiClient.createAcceptanceCriterion(requirementId, {
+          scenarioName,
+          givenContext,
+          whenAction,
+          thenOutcome,
+          type,
+          sortOrder,
+        });
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'update_acceptance_criterion': {
+        const { id, ...updateData } = args as {
+          id: string;
+          scenarioName?: string;
+          givenContext?: string;
+          whenAction?: string;
+          thenOutcome?: string;
+          type?: 'positive' | 'negative' | 'edge_case';
+          sortOrder?: number;
+        };
+        const result = await apiClient.updateAcceptanceCriterion(id, updateData);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'delete_acceptance_criterion': {
+        const { id } = args as { id: string };
+        await apiClient.deleteAcceptanceCriterion(id);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Acceptance criterion deleted successfully' }, null, 2) }],
+        };
+      }
+
+      // ============ Precondition Handlers ============
+
+      case 'list_preconditions': {
+        const { requirementId } = args as { requirementId: string };
+        const result = await apiClient.listPreconditions(requirementId);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'create_precondition': {
+        const { requirementId, category, title, description, sortOrder } = args as {
+          requirementId: string;
+          category: 'technical_deps' | 'data_requirements' | 'env_config' | 'architecture';
+          title: string;
+          description?: string;
+          sortOrder?: number;
+        };
+        const result = await apiClient.createPrecondition(requirementId, {
+          category,
+          title,
+          description,
+          sortOrder,
+        });
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'update_precondition': {
+        const { id, ...updateData } = args as {
+          id: string;
+          category?: 'technical_deps' | 'data_requirements' | 'env_config' | 'architecture';
+          title?: string;
+          description?: string;
+          isMet?: boolean;
+          sortOrder?: number;
+        };
+        const result = await apiClient.updatePrecondition(id, updateData);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'delete_precondition': {
+        const { id } = args as { id: string };
+        await apiClient.deletePrecondition(id);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Precondition deleted successfully' }, null, 2) }],
+        };
+      }
+
+      // ============ Verification Test Handlers ============
+
+      case 'list_verification_tests': {
+        const { requirementId } = args as { requirementId: string };
+        const result = await apiClient.listVerificationTests(requirementId);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'create_verification_test': {
+        const { requirementId, testName, testType, description, steps, expectedResult, automationHint, sortOrder } = args as {
+          requirementId: string;
+          testName: string;
+          testType: 'unit' | 'integration' | 'e2e' | 'manual' | 'performance';
+          description?: string;
+          steps?: Array<{ step: number; action: string; expected: string }>;
+          expectedResult?: string;
+          automationHint?: string;
+          sortOrder?: number;
+        };
+        const result = await apiClient.createVerificationTest(requirementId, {
+          testName,
+          testType,
+          description,
+          steps,
+          expectedResult,
+          automationHint,
+          sortOrder,
+        });
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'update_verification_test': {
+        const { id, ...updateData } = args as {
+          id: string;
+          testName?: string;
+          testType?: 'unit' | 'integration' | 'e2e' | 'manual' | 'performance';
+          description?: string;
+          steps?: Array<{ step: number; action: string; expected: string }>;
+          expectedResult?: string;
+          automationHint?: string;
+          sortOrder?: number;
+        };
+        const result = await apiClient.updateVerificationTest(id, updateData);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'delete_verification_test': {
+        const { id } = args as { id: string };
+        await apiClient.deleteVerificationTest(id);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Verification test deleted successfully' }, null, 2) }],
+        };
+      }
+
+      // ============ Requirement Link Handlers ============
+
+      case 'list_requirement_links': {
+        const { requirementId } = args as { requirementId: string };
+        const result = await apiClient.listRequirementLinks(requirementId);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'create_requirement_link': {
+        const { requirementId, targetRequirementId, linkType, description } = args as {
+          requirementId: string;
+          targetRequirementId: string;
+          linkType: 'depends_on' | 'blocks' | 'related' | 'parent' | 'child';
+          description?: string;
+        };
+        const result = await apiClient.createRequirementLink(requirementId, {
+          targetRequirementId,
+          linkType,
+          description,
+        });
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'delete_requirement_link': {
+        const { linkId } = args as { linkId: string };
+        await apiClient.deleteRequirementLink(linkId);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Requirement link deleted successfully' }, null, 2) }],
+        };
+      }
+
+      // ============ Requirement Comment Handlers ============
+
+      case 'list_requirement_comments': {
+        const { requirementId } = args as { requirementId: string };
+        const result = await apiClient.listRequirementComments(requirementId);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'create_requirement_comment': {
+        const { requirementId, content, parentCommentId, commentLevel, sectionKey, elementId, mentionedUsers } = args as {
+          requirementId: string;
+          content: string;
+          parentCommentId?: string;
+          commentLevel: 'requirement' | 'section' | 'element' | 'inline';
+          sectionKey?: string;
+          elementId?: string;
+          mentionedUsers?: string[];
+        };
+        const result = await apiClient.createRequirementComment(requirementId, {
+          content,
+          parentCommentId,
+          commentLevel,
+          sectionKey,
+          elementId,
+          mentionedUsers,
+        });
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'update_requirement_comment': {
+        const { id, ...updateData } = args as {
+          id: string;
+          content?: string;
+          status?: 'open' | 'resolved' | 'wont_fix';
+        };
+        const result = await apiClient.updateRequirementComment(id, updateData);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'delete_requirement_comment': {
+        const { id } = args as { id: string };
+        await apiClient.deleteRequirementComment(id);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Comment deleted successfully' }, null, 2) }],
+        };
+      }
+
+      // ============ Requirement Tag Handlers ============
+
+      case 'add_requirement_tags': {
+        const { requirementId, tagIds } = args as { requirementId: string; tagIds: string[] };
+        await apiClient.addRequirementTags(requirementId, tagIds);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Tags added to requirement successfully' }, null, 2) }],
+        };
+      }
+
+      case 'remove_requirement_tag': {
+        const { requirementId, tagId } = args as { requirementId: string; tagId: string };
+        await apiClient.removeRequirementTag(requirementId, tagId);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Tag removed from requirement successfully' }, null, 2) }],
+        };
+      }
+
+      case 'get_requirement_tags': {
+        const { requirementId } = args as { requirementId: string };
+        const result = await apiClient.getRequirementTags(requirementId);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      // ============ Requirement Quality Handlers ============
+
+      case 'calculate_requirement_quality': {
+        const { requirementId } = args as { requirementId: string };
+        const result = await apiClient.calculateRequirementQuality(requirementId);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'get_requirement_quality': {
+        const { requirementId } = args as { requirementId: string };
+        const result = await apiClient.getRequirementQuality(requirementId);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      // ============ Requirement Activity Handlers ============
+
+      case 'get_requirement_activity': {
+        const { requirementId } = args as { requirementId: string };
+        const result = await apiClient.getRequirementActivity(requirementId);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
         };
       }
 
