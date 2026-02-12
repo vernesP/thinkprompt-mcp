@@ -10,6 +10,92 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { ThinkPromptApiClient } from './api-client.js';
+import type {
+  ListRequirementsQuery,
+  CreateRequirementInput,
+  UpdateRequirementInput,
+  Requirement,
+  AcceptanceCriterion,
+  VerificationTest,
+  Precondition,
+  RequirementComment,
+} from './api-client.js';
+
+// Response helpers to reduce boilerplate
+function jsonResponse(data: unknown) {
+  return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+}
+
+function successResponse(message: string) {
+  return jsonResponse({ success: true, message });
+}
+
+// Safely extract array from API response (handles both raw arrays and { data: [...] } wrappers)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractArray<T>(result: any): T[] {
+  if (Array.isArray(result)) return result;
+  if (result?.data && Array.isArray(result.data)) return result.data;
+  return [];
+}
+
+// Compact mode helpers for requirement sub-entities
+function compactRequirement(r: Requirement) {
+  return {
+    id: r.id,
+    displayId: r.displayId,
+    title: r.title,
+    status: r.status,
+    isArchived: r.isArchived,
+    qualityScore: r.qualityScore?.overall != null ? { overall: r.qualityScore.overall } : null,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+    acceptanceCriteriaCount: r.acceptanceCriteriaCount,
+    preconditionsCount: r.preconditionsCount,
+    verificationTestsCount: r.verificationTestsCount,
+    linksCount: r.linksCount,
+    commentsCount: r.commentsCount,
+    tags: r.tags,
+  };
+}
+
+function compactAcceptanceCriterion(ac: AcceptanceCriterion) {
+  return {
+    id: ac.id,
+    scenarioName: ac.scenarioName,
+    type: ac.type,
+    sortOrder: ac.sortOrder,
+  };
+}
+
+function compactVerificationTest(vt: VerificationTest) {
+  return {
+    id: vt.id,
+    testName: vt.testName,
+    testType: vt.testType,
+    sortOrder: vt.sortOrder,
+  };
+}
+
+function compactPrecondition(p: Precondition) {
+  return {
+    id: p.id,
+    category: p.category,
+    title: p.title,
+    isMet: p.isMet,
+    sortOrder: p.sortOrder,
+  };
+}
+
+function compactRequirementComment(c: RequirementComment) {
+  return {
+    id: c.id,
+    commentLevel: c.commentLevel,
+    status: c.status,
+    createdBy: c.createdBy,
+    createdAt: c.createdAt,
+    replyCount: c.replies?.length ?? 0,
+  };
+}
 
 // Configuration from environment variables
 const API_URL = process.env.THINKPROMPT_API_URL ?? 'http://localhost:3000/api/v1';
@@ -2298,7 +2384,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     // ============ Requirement Tools ============
     {
       name: 'list_requirements',
-      description: 'List requirements with optional filters. Returns requirements with their status, quality scores, and counts of sub-entities.',
+      description: 'List requirements with optional filters. Returns requirements with their status, quality scores, and counts of sub-entities. Use compact=true (default) for reduced payload.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -2336,6 +2422,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: 'string',
             enum: ['asc', 'desc'],
             description: 'Sort direction',
+          },
+          compact: {
+            type: 'boolean',
+            description: 'Return compact response without description, scope, and quality issue details (default: true, reduces payload significantly)',
           },
         },
       },
@@ -2504,13 +2594,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     // ============ Acceptance Criteria Tools ============
     {
       name: 'list_acceptance_criteria',
-      description: 'List all acceptance criteria for a requirement. Returns BDD-style given/when/then scenarios.',
+      description: 'List acceptance criteria for a requirement. Returns BDD-style scenarios. Use compact=true (default) for reduced payload.',
       inputSchema: {
         type: 'object',
         properties: {
           requirementId: {
             type: 'string',
             description: 'The UUID of the requirement',
+          },
+          compact: {
+            type: 'boolean',
+            description: 'Return compact response without givenContext/whenAction/thenOutcome (default: true)',
+          },
+          limit: {
+            type: 'number',
+            description: 'Maximum number of items to return (default: 50)',
           },
         },
         required: ['requirementId'],
@@ -2593,13 +2691,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     // ============ Precondition Tools ============
     {
       name: 'list_preconditions',
-      description: 'List all preconditions for a requirement.',
+      description: 'List preconditions for a requirement. Use compact=true (default) for reduced payload.',
       inputSchema: {
         type: 'object',
         properties: {
           requirementId: {
             type: 'string',
             description: 'The UUID of the requirement',
+          },
+          compact: {
+            type: 'boolean',
+            description: 'Return compact response without description (default: true)',
+          },
+          limit: {
+            type: 'number',
+            description: 'Maximum number of items to return (default: 50)',
           },
         },
         required: ['requirementId'],
@@ -2673,13 +2779,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     // ============ Verification Test Tools ============
     {
       name: 'list_verification_tests',
-      description: 'List all verification tests for a requirement.',
+      description: 'List verification tests for a requirement. Use compact=true (default) for reduced payload.',
       inputSchema: {
         type: 'object',
         properties: {
           requirementId: {
             type: 'string',
             description: 'The UUID of the requirement',
+          },
+          compact: {
+            type: 'boolean',
+            description: 'Return compact response without description/steps/expectedResult/automationHint (default: true)',
+          },
+          limit: {
+            type: 'number',
+            description: 'Maximum number of items to return (default: 50)',
           },
         },
         required: ['requirementId'],
@@ -2787,13 +2901,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     // ============ Requirement Link Tools ============
     {
       name: 'list_requirement_links',
-      description: 'List all links (dependencies, relations) for a requirement.',
+      description: 'List links (dependencies, relations) for a requirement.',
       inputSchema: {
         type: 'object',
         properties: {
           requirementId: {
             type: 'string',
             description: 'The UUID of the requirement',
+          },
+          limit: {
+            type: 'number',
+            description: 'Maximum number of items to return (default: 50)',
           },
         },
         required: ['requirementId'],
@@ -2844,13 +2962,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     // ============ Requirement Comment Tools ============
     {
       name: 'list_requirement_comments',
-      description: 'List all threaded comments on a requirement.',
+      description: 'List threaded comments on a requirement. Use compact=true (default) for reduced payload.',
       inputSchema: {
         type: 'object',
         properties: {
           requirementId: {
             type: 'string',
             description: 'The UUID of the requirement',
+          },
+          compact: {
+            type: 'boolean',
+            description: 'Return compact response without content/replies/inlinePosition/mentionedUsers (default: true)',
+          },
+          limit: {
+            type: 'number',
+            description: 'Maximum number of items to return (default: 50)',
           },
         },
         required: ['requirementId'],
@@ -3028,6 +3154,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: 'string',
             description: 'The UUID of the requirement',
           },
+          limit: {
+            type: 'number',
+            description: 'Maximum number of activity items to return (default: 50)',
+          },
         },
         required: ['requirementId'],
       },
@@ -3049,40 +3179,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           tags?: string[];
         };
         const result = await apiClient.listPrompts(params);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_prompt': {
         const { id } = args as { id: string };
         const result = await apiClient.getPrompt(id);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_prompt_variables': {
         const { id } = args as { id: string };
         const result = await apiClient.getPromptVariables(id);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return jsonResponse(result);
       }
 
       case 'create_prompt': {
@@ -3108,14 +3217,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           variables,
           isPublic,
         });
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return jsonResponse(result);
       }
 
       case 'update_prompt': {
@@ -3142,135 +3244,77 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           variables,
           isPublic,
         });
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return jsonResponse(result);
       }
 
       // Workspace tool handlers
       case 'list_workspaces': {
         const workspaces = await apiClient.listWorkspaces();
         const currentId = apiClient.getCurrentWorkspaceId();
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(
-                {
-                  currentWorkspaceId: currentId,
-                  workspaces,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return jsonResponse({ currentWorkspaceId: currentId, workspaces });
       }
 
       case 'get_current_workspace': {
         const workspace = await apiClient.getCurrentWorkspace();
         if (!workspace) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({ message: 'No workspace selected or available' }, null, 2),
-              },
-            ],
-          };
+          return jsonResponse({ message: 'No workspace selected or available' });
         }
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(workspace, null, 2),
-            },
-          ],
-        };
+        return jsonResponse(workspace);
       }
 
       case 'switch_workspace': {
         const { workspaceId } = args as { workspaceId: string };
         const result = await apiClient.switchWorkspace(workspaceId);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return jsonResponse(result);
       }
 
       // Tag handlers
       case 'list_tags': {
         const result = await apiClient.listTags();
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_tag': {
         const { id } = args as { id: string };
         const result = await apiClient.getTag(id);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'create_tag': {
         const { name, color } = args as { name: string; color?: string };
         const result = await apiClient.createTag({ name, color });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'update_tag': {
         const { id, name, color } = args as { id: string; name?: string; color?: string };
         const result = await apiClient.updateTag(id, { name, color });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'delete_tag': {
         const { id } = args as { id: string };
         await apiClient.deleteTag(id);
-        return {
-          content: [{ type: 'text', text: 'Tag deleted successfully' }],
-        };
+        return successResponse('Tag deleted successfully');
       }
 
       // Project Management handlers
       case 'list_projects': {
         const { includeArchived } = args as { includeArchived?: boolean };
         const result = await apiClient.listProjects({ includeArchived });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_project': {
         const { id } = args as { id: string };
         const result = await apiClient.getProject(id);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_project_statistics': {
         const { projectId } = args as { projectId: string };
         const result = await apiClient.getProjectStatistics(projectId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'create_project': {
@@ -3281,17 +3325,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           links?: Array<{ type: string; url: string; label?: string }>;
         };
         const result = await apiClient.createProject({ name, slug, description, links });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'list_features': {
         const { projectId, includeArchived, compact } = args as { projectId: string; includeArchived?: boolean; compact?: boolean };
         const result = await apiClient.listFeatures(projectId, { includeArchived, compact });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'list_feature_children': {
@@ -3301,9 +3341,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           includeArchived?: boolean;
         };
         const result = await apiClient.getFeatureChildren(parentId, { recursive, includeArchived });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'search_features': {
@@ -3313,9 +3351,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           includeArchived?: boolean;
         };
         const result = await apiClient.searchFeatures(projectId, { q, includeArchived });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'create_feature': {
@@ -3327,9 +3363,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           status?: 'new' | 'rfc' | 'approved' | 'blocked' | 'ready_for_dev' | 'ready_for_review' | 'done';
         };
         const result = await apiClient.createFeature(projectId, { name, description, parentId, status });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'update_feature_status': {
@@ -3339,9 +3373,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           force?: boolean;
         };
         const result = await apiClient.updateFeatureStatus(id, status, force);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'update_feature': {
@@ -3352,17 +3384,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           parentId?: string;
         };
         const result = await apiClient.updateFeature(id, { name, description, parentId });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_feature_history': {
         const { id } = args as { id: string };
         const result = await apiClient.getFeatureHistory(id);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'add_feature_comment': {
@@ -3376,50 +3404,38 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           mentionedUsers,
           createdBySource: 'mcp',
         });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'list_feature_comments': {
         const { featureId } = args as { featureId: string };
         const result = await apiClient.listFeatureComments(featureId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'delete_feature': {
         const { id } = args as { id: string };
         await apiClient.deleteFeature(id);
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Feature deleted successfully' }, null, 2) }],
-        };
+        return successResponse('Feature deleted successfully');
       }
 
       // Feature Tag handlers
       case 'add_feature_tags': {
         const { featureId, tagIds } = args as { featureId: string; tagIds: string[] };
         await apiClient.addFeatureTags(featureId, tagIds);
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Tags added to feature successfully' }, null, 2) }],
-        };
+        return successResponse('Tags added to feature successfully');
       }
 
       case 'remove_feature_tag': {
         const { featureId, tagId } = args as { featureId: string; tagId: string };
         await apiClient.removeFeatureTag(featureId, tagId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Tag removed from feature successfully' }, null, 2) }],
-        };
+        return successResponse('Tag removed from feature successfully');
       }
 
       case 'get_feature_tags': {
         const { featureId } = args as { featureId: string };
         const result = await apiClient.getFeatureTags(featureId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'generate_tasks_from_feature': {
@@ -3429,9 +3445,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           model?: string;
         };
         const result = await apiClient.generateTasksFromFeature(featureId, { additionalContext, model });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'generate_tasks_bulk': {
@@ -3441,9 +3455,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           model?: string;
         };
         const result = await apiClient.generateTasksBulk(projectId, { additionalContext, model });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'generate_features_from_document': {
@@ -3454,9 +3466,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           model?: string;
         };
         const result = await apiClient.generateFeaturesFromDocument(projectId, { document, additionalContext, model });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'list_tasks': {
@@ -3470,9 +3480,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           limit?: number;
         };
         const result = await apiClient.listTasks(params);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_task': {
@@ -3485,9 +3493,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         } else {
           throw new Error('Either id or kuerzel must be provided');
         }
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'create_task': {
@@ -3503,9 +3509,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           estimationHours?: number;
         };
         const result = await apiClient.createTask(taskInput);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'update_task': {
@@ -3521,9 +3525,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           featureId?: string;
         };
         const result = await apiClient.updateTask(id, updateData);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'update_task_status': {
@@ -3532,9 +3534,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           status: 'open' | 'in_progress' | 'blocked' | 'review' | 'done';
         };
         const result = await apiClient.updateTaskStatus(id, status);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'ai_edit_task': {
@@ -3545,9 +3545,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           model?: string;
         };
         const result = await apiClient.aiEditTask(id, { prompt, provider, model });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'add_task_comment': {
@@ -3561,58 +3559,44 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           mentionedUsers,
           createdBySource: 'mcp',
         });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'list_task_comments': {
         const { taskId } = args as { taskId: string };
         const result = await apiClient.listTaskComments(taskId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_task_history': {
         const { id } = args as { id: string };
         const result = await apiClient.getTaskHistory(id);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'delete_task': {
         const { id } = args as { id: string };
         await apiClient.deleteTask(id);
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Task deleted successfully' }, null, 2) }],
-        };
+        return successResponse('Task deleted successfully');
       }
 
       // Task Tag handlers
       case 'add_task_tags': {
         const { taskId, tagIds } = args as { taskId: string; tagIds: string[] };
         await apiClient.addTaskTags(taskId, tagIds);
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Tags added to task successfully' }, null, 2) }],
-        };
+        return successResponse('Tags added to task successfully');
       }
 
       case 'remove_task_tag': {
         const { taskId, tagId } = args as { taskId: string; tagId: string };
         await apiClient.removeTaskTag(taskId, tagId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Tag removed from task successfully' }, null, 2) }],
-        };
+        return successResponse('Tag removed from task successfully');
       }
 
       case 'get_task_tags': {
         const { taskId } = args as { taskId: string };
         const result = await apiClient.getTaskTags(taskId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       // Template handlers
@@ -3627,17 +3611,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           tags?: string[];
         };
         const result = await apiClient.listTemplates(params);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_template': {
         const { id } = args as { id: string };
         const result = await apiClient.getTemplate(id);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'create_template': {
@@ -3673,9 +3653,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           isPublic,
           tagIds,
         });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'update_template': {
@@ -3692,9 +3670,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           tagIds?: string[];
         };
         const result = await apiClient.updateTemplate(id, updateData);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       // Workflow handlers
@@ -3708,17 +3684,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           includeArchived?: boolean;
         };
         const result = await apiClient.listWorkflows(params);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_workflow': {
         const { id } = args as { id: string };
         const result = await apiClient.getWorkflow(id);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'create_workflow': {
@@ -3749,9 +3721,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }>;
         };
         const result = await apiClient.createWorkflow(input);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'update_workflow': {
@@ -3783,25 +3753,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }>;
         };
         const result = await apiClient.updateWorkflow(id, updateData);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'delete_workflow': {
         const { id } = args as { id: string };
         await apiClient.deleteWorkflow(id);
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Workflow deleted' }, null, 2) }],
-        };
+        return successResponse('Workflow deleted');
       }
 
       case 'validate_workflow': {
         const { id } = args as { id: string };
         const result = await apiClient.validateWorkflow(id);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_workflow_executions': {
@@ -3811,17 +3775,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           limit?: number;
         };
         const result = await apiClient.getWorkflowExecutions(workflowId, { page, limit });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_workflow_execution': {
         const { executionId } = args as { executionId: string };
         const result = await apiClient.getWorkflowExecution(executionId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       // ============ Test Session Handlers ============
@@ -3838,23 +3798,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           featureId,
           metadata,
         });
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(
-                {
-                  sessionId: result.id,
-                  status: result.status,
-                  startedAt: result.startedAt,
-                  message: `Test session "${sessionName}" started. Use record_metric to log metrics and end_test_session to complete.`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return jsonResponse({
+          sessionId: result.id,
+          status: result.status,
+          startedAt: result.startedAt,
+          message: `Test session "${sessionName}" started. Use record_metric to log metrics and end_test_session to complete.`,
+        });
       }
 
       case 'record_metric': {
@@ -3871,9 +3820,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           value,
           metadata,
         });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'report_issue': {
@@ -3896,24 +3843,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           consoleErrors?: Record<string, unknown>[];
         };
         const result = await apiClient.createTestIssue(input);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(
-                {
-                  issueId: result.id,
-                  title: result.title,
-                  severity: result.severity,
-                  status: result.status,
-                  message: `Issue "${result.title}" reported successfully.`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return jsonResponse({
+          issueId: result.id,
+          title: result.title,
+          severity: result.severity,
+          status: result.status,
+          message: `Issue "${result.title}" reported successfully.`,
+        });
       }
 
       case 'end_test_session': {
@@ -3923,24 +3859,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           notes?: string;
         };
         const result = await apiClient.completeSession(sessionId, { status, notes });
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(
-                {
-                  sessionId: result.id,
-                  status: result.status,
-                  durationMs: result.durationMs,
-                  summary: result.summary,
-                  message: result.message,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return jsonResponse({
+          sessionId: result.id,
+          status: result.status,
+          durationMs: result.durationMs,
+          summary: result.summary,
+          message: result.message,
+        });
       }
 
       case 'list_test_sessions': {
@@ -3952,9 +3877,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           limit?: number;
         };
         const result = await apiClient.listTestSessions(params);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_test_session': {
@@ -3963,9 +3886,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           includeMetrics?: boolean;
         };
         const result = await apiClient.getTestSession(sessionId, includeMetrics ?? false);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       // ============ Test Issue Handlers ============
@@ -3982,17 +3903,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           limit?: number;
         };
         const result = await apiClient.listTestIssues(params);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_test_issue': {
         const { issueId } = args as { issueId: string };
         const result = await apiClient.getTestIssue(issueId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'update_test_issue': {
@@ -4008,24 +3925,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           actualBehavior?: string;
         };
         const result = await apiClient.updateTestIssue(issueId, updateData);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(
-                {
-                  issueId: result.id,
-                  title: result.title,
-                  status: result.status,
-                  severity: result.severity,
-                  message: `Issue "${result.title}" updated successfully.`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return jsonResponse({
+          issueId: result.id,
+          title: result.title,
+          status: result.status,
+          severity: result.severity,
+          message: `Issue "${result.title}" updated successfully.`,
+        });
       }
 
       // ============ Quality Analysis Tool Handlers ============
@@ -4043,24 +3949,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ...input,
           source: input.source || 'mcp',
         });
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(
-                {
-                  snapshotId: result.id,
-                  name: result.name,
-                  status: result.status,
-                  startedAt: result.startedAt,
-                  message: `Quality analysis started. Use snapshot ID "${result.id}" to record metrics.`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return jsonResponse({
+          snapshotId: result.id,
+          name: result.name,
+          status: result.status,
+          startedAt: result.startedAt,
+          message: `Quality analysis started. Use snapshot ID "${result.id}" to record metrics.`,
+        });
       }
 
       case 'record_quality_metric': {
@@ -4079,24 +3974,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           score,
           metadata,
         });
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(
-                {
-                  metricId: result.id,
-                  metricType: result.metricType,
-                  metricName: result.metricName,
-                  score: result.score,
-                  message: `Metric "${metricName}" recorded successfully.`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return jsonResponse({
+          metricId: result.id,
+          metricType: result.metricType,
+          metricName: result.metricName,
+          score: result.score,
+          message: `Metric "${metricName}" recorded successfully.`,
+        });
       }
 
       case 'report_quality_issue': {
@@ -4120,24 +4004,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           autoFixable?: boolean;
         };
         const result = await apiClient.createQualityIssue(input);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(
-                {
-                  issueId: result.id,
-                  title: result.title,
-                  category: result.category,
-                  severity: result.severity,
-                  message: `Quality issue "${result.title}" reported successfully.`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return jsonResponse({
+          issueId: result.id,
+          title: result.title,
+          category: result.category,
+          severity: result.severity,
+          message: `Quality issue "${result.title}" reported successfully.`,
+        });
       }
 
       case 'bulk_report_quality_issues': {
@@ -4160,21 +4033,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }>;
         };
         const result = await apiClient.bulkCreateQualityIssues({ issues });
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(
-                {
-                  created: result.created,
-                  message: `${result.created} quality issues reported successfully.`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return jsonResponse({
+          created: result.created,
+          message: `${result.created} quality issues reported successfully.`,
+        });
       }
 
       case 'complete_quality_analysis': {
@@ -4187,44 +4049,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           status: status || 'completed',
           notes,
         });
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(
-                {
-                  snapshotId: result.id,
-                  status: result.status,
-                  durationMs: result.durationMs,
-                  summary: result.summary,
-                  message: result.message,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return jsonResponse({
+          snapshotId: result.id,
+          status: result.status,
+          durationMs: result.durationMs,
+          summary: result.summary,
+          message: result.message,
+        });
       }
 
       case 'delete_quality_snapshot': {
         const { snapshotId } = args as { snapshotId: string };
         await apiClient.deleteQualitySnapshot(snapshotId);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(
-                {
-                  success: true,
-                  message: `Quality snapshot ${snapshotId} deleted successfully`,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        return successResponse(`Quality snapshot ${snapshotId} deleted successfully`);
       }
 
       case 'get_quality_overview': {
@@ -4233,9 +4070,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           period?: '7d' | '30d' | '90d' | '1y' | 'all';
         };
         const result = await apiClient.getQualityOverview(projectId, { period });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_quality_trends': {
@@ -4250,9 +4085,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           period,
           granularity,
         });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'list_quality_snapshots': {
@@ -4264,9 +4097,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           limit?: number;
         };
         const result = await apiClient.listQualitySnapshots(params);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'list_quality_issues': {
@@ -4282,9 +4113,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           limit?: number;
         };
         const result = await apiClient.listQualityIssues(params);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       // ============ Plugin Marketplace Handlers ============
@@ -4300,31 +4129,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           limit?: number;
         };
         const result = await apiClient.searchMarketplacePlugins(params);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_marketplace_plugin': {
         const { nameOrId } = args as { nameOrId: string };
         const result = await apiClient.getMarketplacePlugin(nameOrId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_plugin_categories': {
         const result = await apiClient.getPluginCategories();
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_featured_plugins': {
         const result = await apiClient.getFeaturedPlugins();
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'register_marketplace_plugin': {
@@ -4345,9 +4166,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           keywords?: string[];
         };
         const result = await apiClient.registerMarketplacePlugin(input);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'track_plugin_install': {
@@ -4357,9 +4176,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           source?: string;
         };
         const result = await apiClient.trackPluginInstall(nameOrId, { version, source });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       // ============ Document Tool Handlers ============
@@ -4391,22 +4208,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const { content, frontmatter, ...rest } = doc;
             return rest;
           });
-          return {
-            content: [{ type: 'text', text: JSON.stringify({ data: compactData, meta }, null, 2) }],
-          };
+          return jsonResponse({ data: compactData, meta });
         }
 
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ data: documents, meta }, null, 2) }],
-        };
+        return jsonResponse({ data: documents, meta });
       }
 
       case 'get_document': {
         const { id } = args as { id: string };
         const result = await apiClient.getDocument(id);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'create_document': {
@@ -4426,9 +4237,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           projectId,
           tagIds,
         });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'update_document': {
@@ -4447,17 +4256,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           folderId,
           changeSummary,
         });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'delete_document': {
         const { id } = args as { id: string };
         await apiClient.deleteDocument(id);
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Document deleted (archived) successfully' }, null, 2) }],
-        };
+        return successResponse('Document deleted (archived) successfully');
       }
 
       case 'search_documents': {
@@ -4468,49 +4273,37 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           limit?: number;
         };
         const result = await apiClient.searchDocuments({ query, projectId, folderId, limit });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_document_versions': {
         const { documentId } = args as { documentId: string };
         const result = await apiClient.getDocumentVersions(documentId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_document_version': {
         const { documentId, version } = args as { documentId: string; version: number };
         const result = await apiClient.getDocumentVersion(documentId, version);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'restore_document_version': {
         const { documentId, version } = args as { documentId: string; version: number };
         const result = await apiClient.restoreDocumentVersion(documentId, version);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'add_document_tags': {
         const { documentId, tagIds } = args as { documentId: string; tagIds: string[] };
         await apiClient.addDocumentTags(documentId, tagIds);
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Tags added successfully' }, null, 2) }],
-        };
+        return successResponse('Tags added successfully');
       }
 
       case 'remove_document_tag': {
         const { documentId, tagId } = args as { documentId: string; tagId: string };
         await apiClient.removeDocumentTag(documentId, tagId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Tag removed successfully' }, null, 2) }],
-        };
+        return successResponse('Tag removed successfully');
       }
 
       // ============ Document Folder Tool Handlers ============
@@ -4521,9 +4314,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           includeArchived?: boolean;
         };
         const result = await apiClient.listDocumentFolders(params);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_document_folder_tree': {
@@ -4532,17 +4323,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           includeArchived?: boolean;
         };
         const result = await apiClient.getDocumentFolderTree(params);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_document_folder': {
         const { id } = args as { id: string };
         const result = await apiClient.getDocumentFolder(id);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'create_document_folder': {
@@ -4552,9 +4339,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           projectId?: string;
         };
         const result = await apiClient.createDocumentFolder({ name, parentId, projectId });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'update_document_folder': {
@@ -4564,17 +4349,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           parentId?: string;
         };
         const result = await apiClient.updateDocumentFolder(id, { name, parentId });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'delete_document_folder': {
         const { id } = args as { id: string };
         await apiClient.deleteDocumentFolder(id);
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Folder deleted successfully' }, null, 2) }],
-        };
+        return successResponse('Folder deleted successfully');
       }
 
       case 'reorder_document_folders': {
@@ -4582,15 +4363,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           items: Array<{ id: string; sortOrder: number }>;
         };
         await apiClient.reorderDocumentFolders({ items });
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Folders reordered successfully' }, null, 2) }],
-        };
+        return successResponse('Folders reordered successfully');
       }
 
       // ============ Requirement Tool Handlers ============
 
       case 'list_requirements': {
-        const params = args as {
+        const { compact = true, ...params } = args as {
           status?: string;
           featureId?: string;
           tagId?: string;
@@ -4599,19 +4378,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           includeArchived?: boolean;
           sortBy?: 'created_at' | 'updated_at' | 'display_id' | 'quality_score';
           sortOrder?: 'asc' | 'desc';
+          compact?: boolean;
         };
-        const result = await apiClient.listRequirements(params as import('./api-client.js').ListRequirementsQuery);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        const rawResult = await apiClient.listRequirements(params as ListRequirementsQuery);
+        if (compact) {
+          const items = extractArray<Requirement>(rawResult);
+          return jsonResponse(items.map(compactRequirement));
+        }
+        return jsonResponse(rawResult);
       }
 
       case 'get_requirement': {
         const { id } = args as { id: string };
         const result = await apiClient.getRequirement(id);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'create_requirement': {
@@ -4624,10 +4404,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           tagIds?: string[];
           assigneeIds?: string[];
         };
-        const result = await apiClient.createRequirement(input as import('./api-client.js').CreateRequirementInput);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        const result = await apiClient.createRequirement(input as CreateRequirementInput);
+        return jsonResponse(result);
       }
 
       case 'update_requirement': {
@@ -4640,10 +4418,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           tagIds?: string[];
           assigneeIds?: string[];
         };
-        const result = await apiClient.updateRequirement(id, updateData as import('./api-client.js').UpdateRequirementInput);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        const result = await apiClient.updateRequirement(id, updateData as UpdateRequirementInput);
+        return jsonResponse(result);
       }
 
       case 'update_requirement_status': {
@@ -4652,35 +4428,37 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           status: 'draft' | 'in_discovery' | 'structured' | 'quality_check' | 'in_review' | 'approved' | 'exported';
         };
         const result = await apiClient.updateRequirementStatus(id, status);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'delete_requirement': {
         const { id } = args as { id: string };
         await apiClient.deleteRequirement(id);
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Requirement archived successfully' }, null, 2) }],
-        };
+        return successResponse('Requirement archived successfully');
       }
 
       case 'search_requirements': {
         const { q, includeArchived } = args as { q: string; includeArchived?: boolean };
-        const result = await apiClient.searchRequirements({ q, includeArchived });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        const rawResult = await apiClient.searchRequirements({ q, includeArchived });
+        const items = extractArray<Requirement>(rawResult);
+        return jsonResponse(items.map(compactRequirement));
       }
 
       // ============ Acceptance Criteria Handlers ============
 
       case 'list_acceptance_criteria': {
-        const { requirementId } = args as { requirementId: string };
-        const result = await apiClient.listAcceptanceCriteria(requirementId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        const { requirementId, compact = true, limit = 50 } = args as {
+          requirementId: string;
+          compact?: boolean;
+          limit?: number;
         };
+        const rawResult = await apiClient.listAcceptanceCriteria(requirementId);
+        let items = extractArray<AcceptanceCriterion>(rawResult);
+        if (items.length > limit) items = items.slice(0, limit);
+        if (compact) {
+          return jsonResponse(items.map(compactAcceptanceCriterion));
+        }
+        return jsonResponse(items);
       }
 
       case 'create_acceptance_criterion': {
@@ -4701,9 +4479,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           type,
           sortOrder,
         });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'update_acceptance_criterion': {
@@ -4717,27 +4493,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           sortOrder?: number;
         };
         const result = await apiClient.updateAcceptanceCriterion(id, updateData);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'delete_acceptance_criterion': {
         const { id } = args as { id: string };
         await apiClient.deleteAcceptanceCriterion(id);
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Acceptance criterion deleted successfully' }, null, 2) }],
-        };
+        return successResponse('Acceptance criterion deleted successfully');
       }
 
       // ============ Precondition Handlers ============
 
       case 'list_preconditions': {
-        const { requirementId } = args as { requirementId: string };
-        const result = await apiClient.listPreconditions(requirementId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        const { requirementId, compact = true, limit = 50 } = args as {
+          requirementId: string;
+          compact?: boolean;
+          limit?: number;
         };
+        const raw = await apiClient.listPreconditions(requirementId);
+        let items = extractArray<Precondition>(raw);
+        if (items.length > limit) items = items.slice(0, limit);
+        if (compact) {
+          return jsonResponse(items.map(compactPrecondition));
+        }
+        return jsonResponse(items);
       }
 
       case 'create_precondition': {
@@ -4754,9 +4533,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           description,
           sortOrder,
         });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'update_precondition': {
@@ -4769,27 +4546,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           sortOrder?: number;
         };
         const result = await apiClient.updatePrecondition(id, updateData);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'delete_precondition': {
         const { id } = args as { id: string };
         await apiClient.deletePrecondition(id);
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Precondition deleted successfully' }, null, 2) }],
-        };
+        return successResponse('Precondition deleted successfully');
       }
 
       // ============ Verification Test Handlers ============
 
       case 'list_verification_tests': {
-        const { requirementId } = args as { requirementId: string };
-        const result = await apiClient.listVerificationTests(requirementId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        const { requirementId, compact = true, limit = 50 } = args as {
+          requirementId: string;
+          compact?: boolean;
+          limit?: number;
         };
+        const raw = await apiClient.listVerificationTests(requirementId);
+        let items = extractArray<VerificationTest>(raw);
+        if (items.length > limit) items = items.slice(0, limit);
+        if (compact) {
+          return jsonResponse(items.map(compactVerificationTest));
+        }
+        return jsonResponse(items);
       }
 
       case 'create_verification_test': {
@@ -4812,9 +4592,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           automationHint,
           sortOrder,
         });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'update_verification_test': {
@@ -4829,27 +4607,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           sortOrder?: number;
         };
         const result = await apiClient.updateVerificationTest(id, updateData);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'delete_verification_test': {
         const { id } = args as { id: string };
         await apiClient.deleteVerificationTest(id);
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Verification test deleted successfully' }, null, 2) }],
-        };
+        return successResponse('Verification test deleted successfully');
       }
 
       // ============ Requirement Link Handlers ============
 
       case 'list_requirement_links': {
-        const { requirementId } = args as { requirementId: string };
-        const result = await apiClient.listRequirementLinks(requirementId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        const { requirementId, limit = 50 } = args as { requirementId: string; limit?: number };
+        const raw = await apiClient.listRequirementLinks(requirementId);
+        let items = extractArray(raw);
+        if (items.length > limit) items = items.slice(0, limit);
+        return jsonResponse(items);
       }
 
       case 'create_requirement_link': {
@@ -4864,27 +4638,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           linkType,
           description,
         });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'delete_requirement_link': {
         const { linkId } = args as { linkId: string };
         await apiClient.deleteRequirementLink(linkId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Requirement link deleted successfully' }, null, 2) }],
-        };
+        return successResponse('Requirement link deleted successfully');
       }
 
       // ============ Requirement Comment Handlers ============
 
       case 'list_requirement_comments': {
-        const { requirementId } = args as { requirementId: string };
-        const result = await apiClient.listRequirementComments(requirementId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        const { requirementId, compact = true, limit = 50 } = args as {
+          requirementId: string;
+          compact?: boolean;
+          limit?: number;
         };
+        const raw = await apiClient.listRequirementComments(requirementId);
+        let items = extractArray<RequirementComment>(raw);
+        if (items.length > limit) items = items.slice(0, limit);
+        if (compact) {
+          return jsonResponse(items.map(compactRequirementComment));
+        }
+        return jsonResponse(items);
       }
 
       case 'create_requirement_comment': {
@@ -4905,9 +4682,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           elementId,
           mentionedUsers,
         });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'update_requirement_comment': {
@@ -4917,17 +4692,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           status?: 'open' | 'resolved' | 'wont_fix';
         };
         const result = await apiClient.updateRequirementComment(id, updateData);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'delete_requirement_comment': {
         const { id } = args as { id: string };
         await apiClient.deleteRequirementComment(id);
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Comment deleted successfully' }, null, 2) }],
-        };
+        return successResponse('Comment deleted successfully');
       }
 
       // ============ Requirement Tag Handlers ============
@@ -4935,25 +4706,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'add_requirement_tags': {
         const { requirementId, tagIds } = args as { requirementId: string; tagIds: string[] };
         await apiClient.addRequirementTags(requirementId, tagIds);
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Tags added to requirement successfully' }, null, 2) }],
-        };
+        return successResponse('Tags added to requirement successfully');
       }
 
       case 'remove_requirement_tag': {
         const { requirementId, tagId } = args as { requirementId: string; tagId: string };
         await apiClient.removeRequirementTag(requirementId, tagId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Tag removed from requirement successfully' }, null, 2) }],
-        };
+        return successResponse('Tag removed from requirement successfully');
       }
 
       case 'get_requirement_tags': {
         const { requirementId } = args as { requirementId: string };
         const result = await apiClient.getRequirementTags(requirementId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       // ============ Requirement Quality Handlers ============
@@ -4961,27 +4726,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'calculate_requirement_quality': {
         const { requirementId } = args as { requirementId: string };
         const result = await apiClient.calculateRequirementQuality(requirementId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       case 'get_requirement_quality': {
         const { requirementId } = args as { requirementId: string };
         const result = await apiClient.getRequirementQuality(requirementId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        return jsonResponse(result);
       }
 
       // ============ Requirement Activity Handlers ============
 
       case 'get_requirement_activity': {
-        const { requirementId } = args as { requirementId: string };
-        const result = await apiClient.getRequirementActivity(requirementId);
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
+        const { requirementId, limit = 50 } = args as { requirementId: string; limit?: number };
+        const raw = await apiClient.getRequirementActivity(requirementId);
+        let items = extractArray(raw);
+        if (items.length > limit) items = items.slice(0, limit);
+        return jsonResponse(items);
       }
 
       default:
